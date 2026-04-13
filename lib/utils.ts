@@ -54,3 +54,14 @@ export function pitchDegreesToRatio(degrees: number): string {
   const rise = Math.round(Math.tan((degrees * Math.PI) / 180) * 12);
   return `${rise}/12`;
 }
+
+/**
+ * Calculate slope correction factor for a pitched roof.
+ * The Solar API returns plan-view (horizontal projection) area.
+ * Actual roof surface area = plan area / cos(pitch).
+ * E.g. 4/12 (18.4°) → 1.054, 6/12 (26.6°) → 1.118, 8/12 (33.7°) → 1.202
+ */
+export function slopeCorrectionFactor(pitchDegrees: number): number {
+  if (pitchDegrees <= 0) return 1;
+  return 1 / Math.cos((pitchDegrees * Math.PI) / 180);
+}

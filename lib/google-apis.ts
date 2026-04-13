@@ -7,7 +7,7 @@ import type {
   PlaceCategory,
   NearbyPlacesCategory,
 } from "@/types";
-import { sqMetersToSqFeet, pitchDegreesToRatio } from "./utils";
+import { sqMetersToSqFeet, pitchDegreesToRatio, slopeCorrectionFactor } from "./utils";
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 const SOLAR_API_BASE = "https://solar.googleapis.com/v1";
@@ -119,16 +119,21 @@ export async function getBuildingInsights(
       const segments: RoofSegment[] = solarPotential.roofSegmentStats || [];
       const wholeRoofStats = solarPotential.wholeRoofStats;
 
-      // Calculate total roof area in sq ft
-      const roofAreaSqFt = wholeRoofStats?.areaMeters2
+      // Find predominant pitch (from largest segment)
+      const predominantPitch = calculatePredominantPitch(segments);
+
+      // Calculate total roof area in sq ft (plan-view from Solar API)
+      const planAreaSqFt = wholeRoofStats?.areaMeters2
         ? sqMetersToSqFeet(wholeRoofStats.areaMeters2)
         : segments.reduce(
             (sum, seg) => sum + sqMetersToSqFeet(seg.areaMeters2),
             0
           );
 
-      // Find predominant pitch (from largest segment)
-      const predominantPitch = calculatePredominantPitch(segments);
+      // Apply slope correction: Solar API returns horizontal projection,
+      // actual roof surface area is larger on pitched roofs
+      const pitchDegrees = getPredominantPitchDegrees(segments);
+      const roofAreaSqFt = planAreaSqFt * slopeCorrectionFactor(pitchDegrees);
 
       // Estimate edge lengths (these are approximations based on available data)
       const estimatedPerimeter = estimatePerimeter(roofAreaSqFt, segments.length);
@@ -160,29 +165,26 @@ export async function getBuildingInsights(
 }
 
 /**
- * Calculate predominant pitch from roof segments
+ * Get the predominant pitch in degrees from roof segments (raw numeric value)
  */
-function calculatePredominantPitch(segments: RoofSegment[]): string {
-  if (!segments.length) {
-    return "4/12"; // Default pitch
-  }
+function getPredominantPitchDegrees(segments: RoofSegment[]): number {
+  if (!segments.length) return 18.43; // Default ~4/12
 
-  // Find segment with largest area
   const largest = segments.reduce((prev, curr) =>
     curr.areaMeters2 > prev.areaMeters2 ? curr : prev
   );
 
-  // Use nullish coalescing to preserve 0 values (flat roofs)
-  const pitchDegrees = largest.pitchDegrees ?? 18.43; // Default ~4/12
+  const pitchDegrees = largest.pitchDegrees ?? 18.43;
+  return pitchDegrees < 7.2 ? 0 : pitchDegrees;
+}
 
-  // Treat pitches under 7.2 degrees as flat (0/12)
-  // 7.2° ≈ 1.5/12, so anything that would round to 0/12 or 1/12 is considered flat
-  // This accounts for Solar API reporting small non-zero values for flat roofs
-  if (pitchDegrees < 7.2) {
-    return "0/12";
-  }
-
-  return pitchDegreesToRatio(pitchDegrees);
+/**
+ * Calculate predominant pitch from roof segments (formatted as ratio string)
+ */
+function calculatePredominantPitch(segments: RoofSegment[]): string {
+  const degrees = getPredominantPitchDegrees(segments);
+  if (degrees === 0) return "0/12";
+  return pitchDegreesToRatio(degrees);
 }
 
 /**
@@ -194,8 +196,9 @@ function estimatePerimeter(areaSqFt: number, facets: number): number {
   // Perimeter ≈ 4 * sqrt(area / facets) * facets * adjustment factor
   const avgFacetArea = areaSqFt / Math.max(facets, 1);
   const avgFacetSide = Math.sqrt(avgFacetArea);
-  // Use a factor to account for rectangular shapes and overlaps
-  return avgFacetSide * 4 * Math.sqrt(facets) * 0.8;
+  // Factor accounts for rectangular shapes and overlaps (raised from 0.8 to 0.9
+  // since 0.8 was consistently underestimating perimeter on real roofs)
+  return avgFacetSide * 4 * Math.sqrt(facets) * 0.9;
 }
 
 // ============ Nearby Places API ============
