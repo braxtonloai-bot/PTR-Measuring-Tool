@@ -126,7 +126,7 @@ export async function getBuildingInsights(
       const planAreaSqFt = wholeRoofStats?.areaMeters2
         ? sqMetersToSqFeet(wholeRoofStats.areaMeters2)
         : segments.reduce(
-            (sum, seg) => sum + sqMetersToSqFeet(seg.areaMeters2),
+            (sum, seg) => sum + sqMetersToSqFeet(seg.stats.areaMeters2),
             0
           );
 
@@ -171,7 +171,7 @@ function getPredominantPitchDegrees(segments: RoofSegment[]): number {
   if (!segments.length) return 18.43; // Default ~4/12
 
   const largest = segments.reduce((prev, curr) =>
-    curr.areaMeters2 > prev.areaMeters2 ? curr : prev
+    curr.stats.areaMeters2 > prev.stats.areaMeters2 ? curr : prev
   );
 
   const pitchDegrees = largest.pitchDegrees ?? 18.43;

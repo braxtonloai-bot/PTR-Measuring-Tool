@@ -43,9 +43,12 @@ export interface PricingSettingsResponse {
 
 // Roof Analysis Types
 export interface RoofSegment {
-  areaMeters2: number;
   pitchDegrees: number;
   azimuthDegrees: number;
+  stats: {
+    areaMeters2: number;
+    groundAreaMeters2?: number;
+  };
 }
 
 export type SolarApiQuality = "HIGH" | "MEDIUM" | "LOW";
