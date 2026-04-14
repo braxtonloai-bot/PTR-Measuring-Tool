@@ -223,6 +223,38 @@ export function RoofResults({ address, roof, propertyValue }: RoofResultsProps) 
           </div>
         ))}
       </div>
+
+      {roof.segments && roof.segments.length > 0 && (
+        <div className="border-t border-neutral-100 px-6 pb-6 pt-4">
+          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-400">
+            Segment Breakdown
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-neutral-200 text-left text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                  <th className="pb-2 pr-4">#</th>
+                  <th className="pb-2 pr-4">Area</th>
+                  <th className="pb-2 pr-4">Pitch</th>
+                  <th className="pb-2">Facing</th>
+                </tr>
+              </thead>
+              <tbody>
+                {roof.segments.map((seg, i) => (
+                  <tr key={i} className="border-b border-neutral-50">
+                    <td className="py-2 pr-4 text-neutral-500">{i + 1}</td>
+                    <td className="py-2 pr-4 font-medium text-neutral-800">
+                      {formatNumber(seg.areaSqFt)} sq ft
+                    </td>
+                    <td className="py-2 pr-4 text-neutral-700">{seg.pitch}</td>
+                    <td className="py-2 text-neutral-500">{seg.azimuthDegrees}°</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

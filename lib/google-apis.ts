@@ -2,6 +2,7 @@ import type {
   GeocodeResult,
   RoofData,
   RoofSegment,
+  RoofSegmentDetail,
   NearbyPlacesData,
   NearbyPlace,
   PlaceCategory,
@@ -122,21 +123,33 @@ export async function getBuildingInsights(
       // Find predominant pitch (from largest segment)
       const predominantPitch = calculatePredominantPitch(segments);
 
-      // Calculate total roof area in sq ft (plan-view from Solar API)
-      const planAreaSqFt = wholeRoofStats?.areaMeters2
-        ? sqMetersToSqFeet(wholeRoofStats.areaMeters2)
-        : segments.reduce(
-            (sum, seg) => sum + sqMetersToSqFeet(seg.areaMeters2),
-            0
-          );
-
-      // Apply slope correction: Solar API returns horizontal projection,
-      // actual roof surface area is larger on pitched roofs
-      const pitchDegrees = getPredominantPitchDegrees(segments);
-      const roofAreaSqFt = planAreaSqFt * slopeCorrectionFactor(pitchDegrees);
+      // Calculate total roof area with per-segment slope correction.
+      // Solar API returns plan-view (horizontal projection) area for each segment.
+      // Applying slope correction per-segment is more accurate than using a single
+      // predominant pitch, since different roof faces can have different slopes.
+      const roofAreaSqFt = segments.length > 0
+        ? segments.reduce((sum, seg) => {
+            const segPlanSqFt = sqMetersToSqFeet(seg.areaMeters2);
+            const segPitch = (seg.pitchDegrees ?? 0) < 7.2 ? 0 : (seg.pitchDegrees ?? 0);
+            return sum + segPlanSqFt * slopeCorrectionFactor(segPitch);
+          }, 0)
+        : wholeRoofStats?.areaMeters2
+          ? sqMetersToSqFeet(wholeRoofStats.areaMeters2)
+          : 0;
 
       // Estimate edge lengths (these are approximations based on available data)
       const estimatedPerimeter = estimatePerimeter(roofAreaSqFt, segments.length);
+
+      // Build per-segment detail for transparency
+      const segmentDetails: RoofSegmentDetail[] = segments.map((seg) => {
+        const segPitch = (seg.pitchDegrees ?? 0) < 7.2 ? 0 : (seg.pitchDegrees ?? 0);
+        return {
+          areaSqFt: Math.round(sqMetersToSqFeet(seg.areaMeters2) * slopeCorrectionFactor(segPitch)),
+          pitchDegrees: Math.round((seg.pitchDegrees ?? 0) * 10) / 10,
+          pitch: segPitch === 0 ? "0/12" : pitchDegreesToRatio(segPitch),
+          azimuthDegrees: Math.round(seg.azimuthDegrees ?? 0),
+        };
+      });
 
       return {
         roofAreaSqFt: Math.round(roofAreaSqFt),
@@ -148,6 +161,7 @@ export async function getBuildingInsights(
         eavesFt: Math.round(estimatedPerimeter * 0.35),
         perimeterFt: Math.round(estimatedPerimeter),
         dataQuality: quality,
+        segments: segmentDetails,
       };
     }
 
@@ -199,6 +213,48 @@ function estimatePerimeter(areaSqFt: number, facets: number): number {
   // Factor accounts for rectangular shapes and overlaps (raised from 0.8 to 0.9
   // since 0.8 was consistently underestimating perimeter on real roofs)
   return avgFacetSide * 4 * Math.sqrt(facets) * 0.9;
+}
+
+// ============ Solar Data Layers API ============
+
+export interface DataLayerUrls {
+  dsmUrl: string;
+  rgbUrl: string;
+  maskUrl: string;
+  annualFluxUrl: string;
+}
+
+/**
+ * Get Solar API Data Layers (DSM, RGB, roof mask, flux) for a location.
+ * Returns download URLs for GeoTIFF rasters that can be used for
+ * pixel-level roof analysis - more accurate than Building Insights alone.
+ */
+export async function getDataLayerUrls(
+  lat: number,
+  lng: number,
+  radiusMeters: number = 50
+): Promise<DataLayerUrls | null> {
+  if (!GOOGLE_MAPS_API_KEY) {
+    throw new Error("Google Maps API key is not configured");
+  }
+
+  const url = `${SOLAR_API_BASE}/dataLayers:get?location.latitude=${lat}&location.longitude=${lng}&radiusMeters=${radiusMeters}&view=FULL_LAYERS&requiredQuality=HIGH&pixelSizeMeters=0.1&key=${GOOGLE_MAPS_API_KEY}`;
+
+  const response = await fetchWithTimeout(url, 30_000);
+
+  if (!response.ok) {
+    if (response.status === 404) return null;
+    throw new Error(`Solar Data Layers API error: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  return {
+    dsmUrl: data.dsmUrl || "",
+    rgbUrl: data.rgbUrl || "",
+    maskUrl: data.maskUrl || "",
+    annualFluxUrl: data.annualFluxUrl || "",
+  };
 }
 
 // ============ Nearby Places API ============

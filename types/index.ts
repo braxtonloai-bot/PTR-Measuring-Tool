@@ -50,6 +50,13 @@ export interface RoofSegment {
 
 export type SolarApiQuality = "HIGH" | "MEDIUM" | "LOW";
 
+export interface RoofSegmentDetail {
+  areaSqFt: number;
+  pitchDegrees: number;
+  pitch: string;
+  azimuthDegrees: number;
+}
+
 export interface RoofData {
   roofAreaSqFt: number;
   roofFacets: number;
@@ -60,6 +67,7 @@ export interface RoofData {
   eavesFt: number;
   perimeterFt: number;
   dataQuality: SolarApiQuality;
+  segments?: RoofSegmentDetail[];
 }
 
 export interface GeocodeResult {
